@@ -32,6 +32,8 @@ Q2_INT_BITS = 2
 Q2_FRAC_BITS = 32 - (1 + Q2_INT_BITS)
 Q16_INT_BITS = 16
 Q16_FRAC_BITS = 32 - (1 + Q16_INT_BITS)
+# size of the sos_filter object allocated on the MCU
+MAX_FILTER_SECTIONS = 4
 
 
 # Access a parameter from config or GCode command via a consistent interface
@@ -250,6 +252,8 @@ class ContinuousTareFilter:
         buzz_delay=None,
         notches=None,
         notch_quality=None,
+        sections=None,
+        state=None,
     ):
         self.sps = sps
         self.drift = drift
@@ -258,6 +262,8 @@ class ContinuousTareFilter:
         self.buzz_delay = buzz_delay
         self.notches = notches
         self.notch_quality = notch_quality
+        self.sections = sections
+        self.state = state
 
     def __eq__(self, other):
         if not isinstance(other, ContinuousTareFilter):
@@ -270,10 +276,15 @@ class ContinuousTareFilter:
             and self.buzz_delay == other.buzz_delay
             and self.notches == other.notches
             and self.notch_quality == other.notch_quality
+            and self.sections == other.sections
+            and self.state == other.state
         )
 
     # create a filter design from the parameters
     def design_filter(self, error_func):
+        # coefficients supplied directly, no filter design step is required
+        if self.sections is not None:
+            return self._to_fixed_point(self.sections, self.state, error_func)
         design = sos_filter.DigitalFilter(
             self.sps,
             error_func,
@@ -284,13 +295,20 @@ class ContinuousTareFilter:
             self.notches,
             self.notch_quality,
         )
-        fixed_filter = sos_filter.FixedPointSosFilter(
+        return self._to_fixed_point(
             design.get_filter_sections(),
             design.get_initial_state(),
-            Q2_INT_BITS,
-            Q16_INT_BITS,
+            error_func,
         )
-        return fixed_filter
+
+    @staticmethod
+    def _to_fixed_point(sections, state, error_func):
+        try:
+            return sos_filter.FixedPointSosFilter(
+                sections, state, Q2_INT_BITS, Q16_INT_BITS
+            )
+        except (ValueError, OverflowError) as e:
+            raise error_func("Invalid filter coefficients: %s" % (e,))
 
 
 # Combine ContinuousTareFilter and SosFilter into an easy-to-use class
@@ -331,6 +349,8 @@ class ContinuousTareFilterHelper:
         self._notch_quality_param = floatParamHelper(
             config, "notch_filter_quality", default=2.0, minval=0.5, maxval=6.0
         )
+        # a complete filter design can be given instead of the options above
+        self._sections, self._state = self._read_filter_design(config)
         # filter design specified in the config file, used for defaults
         self._config_design = ContinuousTareFilter()  # empty filter
         self._config_design = self._build_filter()
@@ -339,6 +359,85 @@ class ContinuousTareFilterHelper:
         self._sos_filter = self._create_filter(
             self._active_design.design_filter(config.error), cmd_queue
         )
+
+    # Read a filter design given directly as SciPy formatted SOS sections.
+    # Designing a filter requires SciPy, applying one does not, so this allows
+    # a filter designed elsewhere to be used on hosts without SciPy installed.
+    def _read_filter_design(self, config):
+        sections = config.getlists(
+            "sos_filter_sections",
+            default=None,
+            seps=(",", "\n"),
+            parser=float,
+            count=6,
+        )
+        if sections is None:
+            return None, None
+        designed = (
+            self._drift_param.get(),
+            self._buzz_param.get(),
+            self._notches_param.get(),
+        )
+        if any(designed):
+            raise config.error(
+                "Option 'sos_filter_sections' in section '%s' cannot be"
+                " combined with the drift, buzz or notch filter options"
+                % (config.get_name(),)
+            )
+        if len(sections) > MAX_FILTER_SECTIONS:
+            raise config.error(
+                "Option 'sos_filter_sections' in section '%s' has %i sections"
+                ", the maximum is %i"
+                % (config.get_name(), len(sections), MAX_FILTER_SECTIONS)
+            )
+        for index, section in enumerate(sections):
+            self._validate_section(config, index, section)
+        # coefficients are only valid for the rate they were designed at
+        design_sps = config.getfloat("sos_filter_design_sps", None, above=0.0)
+        if design_sps is not None and design_sps != self._sps:
+            raise config.error(
+                "Option 'sos_filter_design_sps' in section '%s' is %.1f but"
+                " the sensor runs at %.1f samples per second"
+                % (config.get_name(), design_sps, self._sps)
+            )
+        state = config.getlists(
+            "sos_filter_state",
+            default=None,
+            seps=(",", "\n"),
+            parser=float,
+            count=2,
+        )
+        if state is None:
+            # the filter is reset to this state at the start of every probing
+            # move, after the tare has brought the input close to 0g, so
+            # starting from rest introduces no step
+            state = tuple((0.0, 0.0) for _ in sections)
+        elif len(state) != len(sections):
+            raise config.error(
+                "Option 'sos_filter_state' in section '%s' has %i sections"
+                ", 'sos_filter_sections' has %i"
+                % (config.get_name(), len(state), len(sections))
+            )
+        return sections, state
+
+    # A section whose poles fall outside the unit circle diverges instead of
+    # settling. The probe triggers on abs(filtered_grams), so such a filter
+    # would trigger in mid air.
+    @staticmethod
+    def _validate_section(config, index, section):
+        a0, a1, a2 = section[3], section[4], section[5]
+        if a0 != 1.0:
+            raise config.error(
+                "Option 'sos_filter_sections' in section '%s': coefficient 3"
+                " of section %i must be 1.0 but was %f"
+                % (config.get_name(), index, a0)
+            )
+        if abs(a2) >= 1.0 or abs(a1) >= 1.0 + a2:
+            raise config.error(
+                "Option 'sos_filter_sections' in section '%s': section %i is"
+                " unstable, it requires abs(a2) < 1 and abs(a1) < 1 + a2"
+                % (config.get_name(), index)
+            )
 
     def _build_filter(self, gcmd=None):
         drift = self._drift_param.get(gcmd)
@@ -356,11 +455,13 @@ class ContinuousTareFilterHelper:
             buzz_delay,
             notches,
             notch_quality,
+            self._sections,
+            self._state,
         )
 
     def _create_filter(self, fixed_filter, cmd_queue):
         return sos_filter.SosFilter(
-            self._sensor.get_mcu(), cmd_queue, fixed_filter, 4
+            self._sensor.get_mcu(), cmd_queue, fixed_filter, MAX_FILTER_SECTIONS
         )
 
     def update_from_command(self, gcmd):

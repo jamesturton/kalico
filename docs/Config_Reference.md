@@ -6169,6 +6169,23 @@ sensor_type:
 #   Controls how narrow the range of frequencies are that the notch filter
 #   removes. Larger numbers produce a narrower filter. Minimum value is 0.5 and
 #   maximum is 3.0. Default: 2.0
+#sos_filter_sections:
+#   A complete filter design, given as SciPy formatted second order sections.
+#   Each line holds the 6 coefficients of one section and a maximum of 4
+#   sections may be given. Designing a filter requires the SciPy library but
+#   applying one does not, so this allows a filter designed on another machine
+#   to be used on a host where SciPy is not installed. Cannot be combined with
+#   the drift, buzz or notch filter options above. Default: None
+#sos_filter_state:
+#   The initial state of each filter section, 2 values per line, as produced by
+#   scipy.signal.sosfilt_zi(). There must be one line per section in
+#   sos_filter_sections. The filter is reset to this state before every probing
+#   move. Default: all sections start at rest.
+#sos_filter_design_sps: 80
+#   The samples per second the coefficients in sos_filter_sections were
+#   designed for. Klipper raises an error if this does not match the sample
+#   rate of the sensor, which catches coefficients copied from a machine with a
+#   different configuration. Default: None, no check is performed.
 #tare_time:
 #   The time in seconds used for taring the load_cell before each probe. The
 #   default value is: 5 / 50 = 0.1. This collects samples from 5 cycles of

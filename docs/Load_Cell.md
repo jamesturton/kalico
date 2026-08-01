@@ -418,6 +418,40 @@ The filter is off by default. The [SciPy](https://scipy.org/) library is require
 
 Pre-compiled builds are available for Python 3 on 32-bit Raspberry Pi systems.
 
+#### Supplying Filter Coefficients Directly
+
+SciPy is only used to *design* the filter. The filter itself runs on the MCU in fixed point arithmetic and needs no libraries at all. On hosts where SciPy cannot be installed, a filter designed elsewhere can be given directly with `sos_filter_sections`, and the drift, buzz and notch options are then not used.
+
+Design the filter on any machine that does have SciPy, using the sample rate the sensor is configured for:
+
+```python
+import scipy.signal as signal
+sps = 80.0
+sos = signal.butter(1, 0.5, btype="highpass", fs=sps, output="sos")
+zi = signal.sosfilt_zi(sos)
+for row in sos:
+    print("    " + ", ".join("%.12g" % (c,) for c in row))
+for row in zi:
+    print("    " + ", ".join("%.12g" % (c,) for c in row))
+```
+
+Then paste the results into the `[load_cell_probe]` section, one section per line:
+
+```
+[load_cell_probe]
+sos_filter_sections:
+    0.980740725798, -0.980740725798, 0, 1, -0.961481451595, 0
+sos_filter_state:
+    -0.980740725798, 0
+sos_filter_design_sps: 80
+```
+
+Up to 4 sections may be given. To combine several filters, stack their sections in the order they should be applied, for example a highpass followed by a lowpass and a notch. `sos_filter_design_sps` is optional but recommended: coefficients are only correct at the sample rate they were designed for, and it turns a silently wrong filter into a startup error.
+
+Klipper rejects a section whose poles fall outside the unit circle. Such a filter diverges rather than settling, and because the probe triggers on the absolute filtered force, it would trigger in mid air.
+
+Note that `LOAD_CELL_PROBE_CALIBRATE CALIBRATION=DRIFT_FILTER` still requires SciPy, because it simulates candidate filters against recorded data. Tune the cutoff on a machine with SciPy, or by trial, and transfer the resulting coefficients.
+
 #### Filter Tuning
 
 The `drift_filter_cutoff_frequency` parameter can be automatically calibrated using `LOAD_CELL_PROBE_CALIBRATE CALIBRATION=DRIFT_FILTER`. See [Drift Filter Calibration](#drift-filter-calibration) for details.
