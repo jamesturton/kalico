@@ -6117,6 +6117,25 @@ sclk_pins:
 #   the hardware wiring of the RATE pin shared by all chips.
 ```
 
+#### CS123X
+This is a 24 bit chip using "bit-bang" communications. Suitable for probing.
+```
+[load_cell]
+sensor_type: cs123x
+sclk_pin:
+#   The pin connected to the CS123X clock line.
+#   This parameter must be provided.
+dout_pin:
+#   The pin connected to the CS123X data output line.
+#   This parameter must be provided.
+#gain: 128
+#   Valid values for gain are: 1, 2, 64 or 128.
+#   The default is 128.
+#sample_rate: 10
+#   Valid values for sample_rate are: 10, 40, 640 or 1280.
+#   The default value is 10.
+```
+
 
 ### [load_cell_probe]
 Load Cell Probe. This combines the functionality of a [probe] and a [load_cell].
