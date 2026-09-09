@@ -26,6 +26,7 @@ reference_tare_counts: 12345
   * [`hx717`](Config_Reference.md#hx717)
   * [`hx711s`](Config_Reference.md#hx711s)
   * [`hx717s`](Config_Reference.md#hx717s)
+  * [`cs123x`](Config_Reference.md#cs123x)
   * [`ads1220`](Config_Reference.md#ads1220)
   * [`ads131m02`](Config_Reference.md#ads131m02)
   * [`ads131m04`](Config_Reference.md#ads131m04)
