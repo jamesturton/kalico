@@ -500,7 +500,7 @@ void hal_debug_hex(uint32_t value)
  */
 void hal_debug_print(const char *str)
 {
-    uart_puts(UART_0, str);
+    // uart_puts(UART_2, str);
 }
 
 /**
