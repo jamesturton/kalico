@@ -187,7 +187,7 @@ cs123x_config(struct gpio_in dout, struct gpio_out din, struct gpio_out sclk,
     cs123x_generate_clk(sclk, 1);
 
     // Enter low-power mode
-    gpio_out_write(sclk, 1);
+    gpio_out_write(sclk, 0);
     return config;
 }
 
@@ -282,7 +282,7 @@ command_config_cs123x(uint32_t *args)
     cs123x->din = gpio_out_setup(args[1], 1);
     cs123x->dout = gpio_in_setup(args[1], 1);
     cs123x->sclk = gpio_out_setup(args[2], 0);
-    gpio_out_write(cs123x->sclk, 1); // put chip in power down state
+    gpio_out_write(cs123x->sclk, 0); // put chip in power down state
 }
 DECL_COMMAND(command_config_cs123x, "config_cs123x oid=%c"
                                     " dout_pin=%u sclk_pin=%u");
@@ -329,7 +329,7 @@ command_query_cs123x(uint32_t *args)
     cs123x->rest_ticks = args[1];
     if (!cs123x->rest_ticks) {
         // End measurements
-        gpio_out_write(cs123x->sclk, 1); // put chip in power down state
+        gpio_out_write(cs123x->sclk, 0); // put chip in power down state
         return;
     }
     // Start new measurements
