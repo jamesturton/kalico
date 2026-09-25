@@ -4,7 +4,8 @@
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
 import logging
-from . import bulk_sensor
+
+from .. import bulk_sensor
 
 UPDATE_INTERVAL = 0.10
 
@@ -46,6 +47,7 @@ class CS1237:
             printer, self._process_batch, self._start_measurements,
             self._finish_measurements, UPDATE_INTERVAL)
         self.query_cmd = None
+        self.attach_probe_cmd = None
         mcu.add_config_cmd(
             "config_cs1237 oid=%d config=%d dout_pin=%s sclk_pin=%s"
             % (self.oid, self.chip_config, self.dout_pin, self.sclk_pin))
@@ -57,15 +59,16 @@ class CS1237:
         cmd_queue = self.mcu.alloc_command_queue()
         self.query_cmd = self.mcu.lookup_command(
             "query_cs1237 oid=%c rest_ticks=%u", cq=cmd_queue)
+        self.attach_probe_cmd = self.mcu.lookup_command(
+            "cs1237_attach_load_cell_probe oid=%c load_cell_probe_oid=%c",
+            cq=cmd_queue)
         self.ffreader.setup_query_command("query_cs1237_status oid=%c",
                                           oid=self.oid, cq=cmd_queue)
         errors = self.mcu.get_enumerations().get("cs1237_error:", {})
         self._sensor_errors = {v: k for k, v in errors.items()}
 
-    def setup_trigger_analog(self, trigger_analog_oid):
-        self.mcu.add_config_cmd(
-            "cs1237_attach_trigger_analog oid=%d trigger_analog_oid=%d"
-            % (self.oid, trigger_analog_oid), is_init=True)
+    def attach_load_cell_probe(self, load_cell_probe_oid):
+        self.attach_probe_cmd.send([self.oid, load_cell_probe_oid])
 
     def get_mcu(self):
         return self.mcu
@@ -75,6 +78,9 @@ class CS1237:
 
     def get_range(self):
         return -0x800000, 0x7fffff
+
+    def get_channel_count(self):
+        return 1
 
     def get_status(self, eventtime):
         return {'errors': self.last_error_count,
