@@ -13,7 +13,7 @@
 #include "command.h" // DECL_COMMAND
 #include "sched.h" // sched_add_timer
 #include "sensor_bulk.h" // sensor_bulk_report
-#include "trigger_analog.h" // trigger_analog_update
+#include "load_cell_probe.h" // load_cell_probe_report_sample
 
 struct cs1237_adc {
     struct timer timer;
@@ -25,7 +25,7 @@ struct cs1237_adc {
     struct gpio_out dout_out;
     struct gpio_out sclk;
     struct sensor_bulk sb;
-    struct trigger_analog *ta;
+    struct load_cell_probe *lce;
 };
 
 enum {
@@ -228,10 +228,10 @@ cs1237_read_adc(struct cs1237_adc *cs, uint8_t oid)
         irq_enable();
     }
     if (error) {
-        trigger_analog_note_error(cs->ta, error);
         counts = (uint32_t)error << 24;
-    } else {
-        trigger_analog_update(cs->ta, counts);
+    } else if (cs->lce) {
+        // probe is optional, report if enabled
+        load_cell_probe_report_sample(cs->lce, counts);
     }
     add_sample(cs, oid, counts);
 }
@@ -253,15 +253,13 @@ DECL_COMMAND(command_config_cs1237, "config_cs1237 oid=%c config=%c"
              " dout_pin=%u sclk_pin=%u");
 
 void
-cs1237_attach_trigger_analog(uint32_t *args)
+cs1237_attach_load_cell_probe(uint32_t *args)
 {
     struct cs1237_adc *cs = oid_lookup(args[0], command_config_cs1237);
-    cs->ta = trigger_analog_oid_lookup(args[1]);
+    cs->lce = load_cell_probe_oid_lookup(args[1]);
 }
-#if CONFIG_WANT_TRIGGER_ANALOG
-DECL_COMMAND(cs1237_attach_trigger_analog, "cs1237_attach_trigger_analog oid=%c"
-             " trigger_analog_oid=%c");
-#endif
+DECL_COMMAND(cs1237_attach_load_cell_probe, "cs1237_attach_load_cell_probe"
+             " oid=%c load_cell_probe_oid=%c");
 
 void
 command_query_cs1237(uint32_t *args)
